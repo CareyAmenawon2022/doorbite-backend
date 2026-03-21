@@ -66,5 +66,5 @@ io.on('connection', (socket) => {
 // ── START ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 connectDB().then(() => {
-  server.listen(PORT, () => console.log(`✅ QuickBite API running on port ${PORT}`));
+  server.listen(PORT, () => console.log(`✅ DoorBite API running on port ${PORT}`));
 });
