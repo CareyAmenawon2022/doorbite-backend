@@ -402,20 +402,21 @@ adminRouter.get('/overview', protect, role('admin'), async (req, res) => {
     const today = new Date(); today.setHours(0,0,0,0);
     const weekAgo = new Date(Date.now() - 7*24*60*60*1000);
     const [customers, riders, restaurants, totalOrders, deliveredOrders,
-           todayDelivered, weekDelivered, allDelivered, pendingW, pendingR,
-           pendingRestaurants] = await Promise.all([
-      User.countDocuments({ role: 'customer' }),
-      User.countDocuments({ role: 'rider' }),
-      Restaurant.countDocuments({ isVerified: true }),
-      Order.countDocuments({ paymentStatus: 'paid' }),
-      Order.countDocuments({ status: 'delivered' }),
-      Order.find({ status: 'delivered', updatedAt: { $gte: today } }),
-      Order.find({ status: 'delivered', updatedAt: { $gte: weekAgo } }),
-      Order.find({ status: 'delivered' }),
-      Withdrawal.countDocuments({ status: 'pending' }),
-      Order.countDocuments({ refundStatus: 'requested' }),
-      Restaurant.countDocuments({ isVerified: false, isSuspended: false }),
-    ]);
+       todayDelivered, weekDelivered, allDelivered, pendingW, pendingR,
+       pendingRestaurants, pendingRiders] = await Promise.all([
+  User.countDocuments({ role: 'customer' }),
+  User.countDocuments({ role: 'rider', isApproved: true }),
+  Restaurant.countDocuments({ isVerified: true }),
+  Order.countDocuments({ paymentStatus: 'paid' }),
+  Order.countDocuments({ status: 'delivered' }),
+  Order.find({ status: 'delivered', updatedAt: { $gte: today } }),
+  Order.find({ status: 'delivered', updatedAt: { $gte: weekAgo } }),
+  Order.find({ status: 'delivered' }),
+  Withdrawal.countDocuments({ status: 'pending' }),
+  Order.countDocuments({ refundStatus: 'requested' }),
+  Restaurant.countDocuments({ isVerified: false, isSuspended: false }),
+  User.countDocuments({ role: 'rider', isApproved: false, isSuspended: false }), // ← NEW
+]);
     const gmv = arr => arr.reduce((s,o) => s+(o.total||0), 0);
     res.json({
       totalUsers: customers, totalRiders: riders, totalRestaurants: restaurants,
@@ -593,6 +594,62 @@ categoriesRouter.delete('/:id', protect, role('admin'), async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+// ── ADD THESE ROUTES INSIDE ridersRouter in routes.js ────────────────────────
+// Place after ridersRouter.get('/history', ...) and before module.exports
+
+// GET /api/riders/pending — admin sees all pending riders
+ridersRouter.get('/pending', protect, role('admin'), async (req, res) => {
+  try {
+    const riders = await User.find({ role: 'rider', isApproved: false, isSuspended: false })
+      .select('-password')
+      .sort('-createdAt');
+    res.json(riders);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/riders/all — admin sees all riders
+ridersRouter.get('/all', protect, role('admin'), async (req, res) => {
+  try {
+    const riders = await User.find({ role: 'rider' })
+      .select('-password')
+      .sort('-createdAt');
+    res.json(riders);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PATCH /api/riders/:id/approve — admin approves a rider
+ridersRouter.patch('/:id/approve', protect, role('admin'), async (req, res) => {
+  try {
+    const { sendEmail } = require('../utils/emailService');
+    const { sendSMS } = require('../utils/smsService');
+    const rider = await User.findByIdAndUpdate(
+      req.params.id,
+      { isApproved: true, approvedAt: new Date(), rejectionReason: '' },
+      { new: true }
+    ).select('-password');
+    if (!rider) return res.status(404).json({ message: 'Rider not found' });
+    // Notify rider
+    sendEmail(rider.email, 'riderApproved', { riderName: rider.name }).catch(() => {});
+    if (rider.phone) sendSMS(rider.phone, 'riderApproved', [rider.name]).catch(() => {});
+    res.json(rider);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PATCH /api/riders/:id/reject — admin rejects a rider
+ridersRouter.patch('/:id/reject', protect, role('admin'), async (req, res) => {
+  try {
+    const { sendEmail } = require('../utils/emailService');
+    const reason = req.body.reason || 'Does not meet requirements';
+    const rider = await User.findByIdAndUpdate(
+      req.params.id,
+      { isApproved: false, isSuspended: true, rejectionReason: reason },
+      { new: true }
+    ).select('-password');
+    if (!rider) return res.status(404).json({ message: 'Rider not found' });
+    sendEmail(rider.email, 'riderRejected', { riderName: rider.name, reason }).catch(() => {});
+    res.json(rider);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
 
 usersRouter.post('/push-token', protect, async (req, res) => {
   try {

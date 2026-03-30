@@ -9,15 +9,33 @@ const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: 
 // POST /api/auth/register — customer & rider
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, phone, role, vehicleType, restaurantName } = req.body;
+    const {
+      name, email, password, phone, role, vehicleType,
+      restaurantName,
+      ninNumber, idType, idDocumentUrl, // ← NEW rider verification fields
+    } = req.body;
 
     if (await User.findOne({ email }))
       return res.status(400).json({ message: 'Email already registered' });
+
+    // Riders must provide NIN/ID
+    if (role === 'rider') {
+      if (!ninNumber || !ninNumber.trim())
+        return res.status(400).json({ message: 'Please provide your NIN or ID number' });
+      if (!phone || !phone.trim())
+        return res.status(400).json({ message: 'Phone number is required for riders' });
+    }
 
     const user = await User.create({
       name, email, password, phone,
       role: role || 'customer',
       vehicleType,
+      // Rider verification fields
+      ninNumber: ninNumber || '',
+      idType: idType || 'NIN',
+      idDocumentUrl: idDocumentUrl || '',
+      // Riders start as NOT approved — admin must approve
+      isApproved: role === 'rider' ? false : true,
     });
 
     if (role === 'restaurant') {
@@ -29,7 +47,7 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // ── Welcome notifications (non-blocking) ─────────────────────────────────
+    // ── Welcome notifications ─────────────────────────────────────────────────
     if (user.role === 'customer') {
       sendEmail(user.email, 'welcomeCustomer', user.name).catch(() => {});
       if (user.phone) sendSMS(user.phone, 'welcomeCustomer', [user.name]).catch(() => {});
@@ -38,11 +56,16 @@ router.post('/register', async (req, res) => {
     if (user.role === 'rider') {
       sendEmail(user.email, 'welcomeRider', user.name).catch(() => {});
       if (user.phone) sendSMS(user.phone, 'welcomeRider', [user.name]).catch(() => {});
+      // Return pending message — no token yet
+      return res.status(201).json({
+        pending: true,
+        message: 'Application submitted! Your account is under review. We will notify you once approved.',
+      });
     }
 
     res.status(201).json({
       token: signToken(user._id),
-      user: { _id: user._id, name: user.name, email: user.email, role: user.role },
+      user: { _id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -64,30 +87,16 @@ router.post('/register-restaurant', async (req, res) => {
       return res.status(400).json({ message: 'Email already registered' });
 
     const user = await User.create({
-      name: ownerName,
-      email,
-      password,
-      phone,
-      role: 'restaurant',
+      name: ownerName, email, password, phone, role: 'restaurant', isApproved: true,
     });
 
     await Restaurant.create({
-      owner: user._id,
-      name: restaurantName,
-      cuisineType,
-      address,
-      description: description || '',
-      phone,
-      isVerified: false,
-      isSuspended: false,
-      isOpen: false,
+      owner: user._id, name: restaurantName, cuisineType,
+      address, description: description || '', phone,
+      isVerified: false, isSuspended: false, isOpen: false,
     });
 
-    // ── Notify applicant their application was received (non-blocking) ────────
-    sendEmail(user.email, 'restaurantApplicationReceived', {
-      ownerName,
-      restaurantName,
-    }).catch(() => {});
+    sendEmail(user.email, 'restaurantApplicationReceived', { ownerName, restaurantName }).catch(() => {});
     if (phone) sendSMS(phone, 'restaurantApplicationReceived', [restaurantName]).catch(() => {});
 
     res.status(201).json({
@@ -110,6 +119,20 @@ router.post('/login', async (req, res) => {
     if (user.isSuspended)
       return res.status(403).json({ message: 'Account suspended. Contact support.' });
 
+    // ── Block unapproved riders ───────────────────────────────────────────────
+    if (user.role === 'rider' && !user.isApproved) {
+      if (user.rejectionReason) {
+        return res.status(403).json({
+          message: `Your application was rejected: ${user.rejectionReason}. Contact support@doorbite.ng`,
+          rejected: true,
+        });
+      }
+      return res.status(403).json({
+        message: 'Your rider account is pending approval. We will notify you once reviewed.',
+        pending: true,
+      });
+    }
+
     if (user.role === 'restaurant') {
       const restaurant = await Restaurant.findOne({ owner: user._id });
       if (restaurant && !restaurant.isVerified) {
@@ -121,7 +144,7 @@ router.post('/login', async (req, res) => {
 
     res.json({
       token: signToken(user._id),
-      user: { _id: user._id, name: user.name, email: user.email, role: user.role },
+      user: { _id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

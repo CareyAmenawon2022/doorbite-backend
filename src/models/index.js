@@ -17,6 +17,12 @@ const userSchema = new mongoose.Schema({
   // Rider
   vehicleType: String,
   isOnline: { type: Boolean, default: false },
+  isApproved: { type: Boolean, default: false }, // ← NEW: admin must approve rider
+  ninNumber: { type: String, default: '' },       // ← NEW: NIN or ID number
+  idType: { type: String, default: 'NIN' },       // ← NEW: NIN / Drivers License / Voters Card
+  idDocumentUrl: { type: String, default: '' },   // ← NEW: uploaded ID image URL
+  approvedAt: { type: Date, default: null },       // ← NEW: when admin approved
+  rejectionReason: { type: String, default: '' },  // ← NEW: reason if rejected
   location: { lat: Number, lng: Number },
   rating: { type: Number, default: 5.0 },
   totalTrips: { type: Number, default: 0 },
@@ -112,7 +118,8 @@ const orderSchema = new mongoose.Schema({
   riderEarning: { type: Number, default: 900 },
   commissionPct: { type: Number, default: 10 },
   customerConfirmed: { type: Boolean, default: false },
-  refundEligible: { type: Boolean, default: true },  rated: { type: Boolean, default: false },
+  refundEligible: { type: Boolean, default: true },
+  rated: { type: Boolean, default: false },
   riderRating: { type: Number, min: 1, max: 5, default: null },
   restaurantRating: { type: Number, min: 1, max: 5, default: null },
   riderComment: { type: String, default: '' },

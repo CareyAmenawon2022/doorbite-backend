@@ -289,8 +289,16 @@ router.patch('/:id/status', protect, async (req, res) => {
       if (customer?.phone) sendSMS(customer.phone, 'orderDelivered', [order.orderCode]).catch(() => {});
 
       // Notify rider their earnings were credited
-      try {
-        const rider = await User.findById(order.rider).select('phone email name');
+     try {
+        const rider = await User.findById(order.rider).select('phone email name pushToken');
+        if (rider?.pushToken) {
+          sendPushNotification(
+            rider.pushToken,
+            '🎉 Delivery Complete!',
+            `₦${order.riderEarning} has been added to your earnings!`,
+            { type: 'delivery_complete', orderId: order._id.toString() }
+          ).catch(() => {});
+        }
         if (rider?.phone) sendSMS(rider.phone, 'riderDeliveryComplete', [order.orderCode, order.riderEarning]).catch(() => {});
         if (rider?.email) sendEmail(rider.email, 'riderDeliveryComplete', {
           orderCode: order.orderCode,
