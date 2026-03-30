@@ -40,7 +40,7 @@ restaurantRouter.get('/', async (req, res) => {
       const uLng = parseFloat(lng);
       const withDist = restaurants.map(r => {
         const rLat = r.location?.lat || 6.3350;
-const rLng = r.location?.lng || 5.6037;
+        const rLng = r.location?.lng || 5.6037;
         const dist = haversineKm(uLat, uLng, rLat, rLng);
         return { ...r.toObject(), distance: Math.round(dist * 10) / 10 };
       });
@@ -60,7 +60,8 @@ restaurantRouter.get('/me', protect, role('restaurant'), async (req, res) => {
 
 restaurantRouter.patch('/me', protect, role('restaurant'), async (req, res) => {
   try {
-const allowed = ['name','description','cuisineType','phone','address','isOpen','openTime','closeTime','bankDetails','logo'];    const updates = {};
+    const allowed = ['name','description','cuisineType','phone','address','isOpen','openTime','closeTime','bankDetails','logo'];
+    const updates = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     const r = await Restaurant.findOneAndUpdate({ owner: req.user._id }, updates, { new: true });
     res.json(r);
@@ -82,8 +83,6 @@ restaurantRouter.get('/analytics', protect, role('restaurant'), async (req, res)
     const sum = arr => arr.reduce((s, o) => s + (o.subtotal || 0), 0);
     const grossRevenue = sum(allOrders);
     const platformCut = Math.round(grossRevenue * 0.10 / 0.90);
-
-    // ── Real top menu items ───────────────────────────────────────────────────
     const itemCounts = {};
     allOrders.forEach(order => {
       order.items.forEach(item => {
@@ -96,7 +95,6 @@ restaurantRouter.get('/analytics', protect, role('restaurant'), async (req, res)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
-
     res.json({
       todayRevenue: sum(todayOrders), todayOrders: todayOrders.length,
       weekRevenue: sum(weekOrders), weekOrders: weekOrders.length,
@@ -108,7 +106,9 @@ restaurantRouter.get('/analytics', protect, role('restaurant'), async (req, res)
       topItems,
     });
   } catch (err) { res.status(500).json({ message: err.message }); }
-});// ── MENU ──────────────────────────────────────────────────────────────────────
+});
+
+// ── MENU ──────────────────────────────────────────────────────────────────────
 const menuRouter = express.Router();
 
 menuRouter.get('/:restaurantId', async (req, res) => {
@@ -152,6 +152,13 @@ usersRouter.patch('/me', protect, async (req, res) => {
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true }).select('-password');
     res.json(user);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+usersRouter.post('/push-token', protect, async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.user._id, { pushToken: req.body.token });
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
@@ -206,6 +213,53 @@ ridersRouter.get('/history', protect, role('rider'), async (req, res) => {
       .sort('-updatedAt')
       .limit(100);
     res.json(orders);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ── Admin rider management routes (specific before :id) ───────────────────────
+ridersRouter.get('/pending', protect, role('admin'), async (req, res) => {
+  try {
+    const riders = await User.find({ role: 'rider', isApproved: false, isSuspended: false })
+      .select('-password')
+      .sort('-createdAt');
+    res.json(riders);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+ridersRouter.get('/all', protect, role('admin'), async (req, res) => {
+  try {
+    const riders = await User.find({ role: 'rider' })
+      .select('-password')
+      .sort('-createdAt');
+    res.json(riders);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+ridersRouter.patch('/:id/approve', protect, role('admin'), async (req, res) => {
+  try {
+    const rider = await User.findByIdAndUpdate(
+      req.params.id,
+      { isApproved: true, approvedAt: new Date(), rejectionReason: '' },
+      { new: true }
+    ).select('-password');
+    if (!rider) return res.status(404).json({ message: 'Rider not found' });
+    sendEmail(rider.email, 'riderApproved', { riderName: rider.name }).catch(() => {});
+    if (rider.phone) sendSMS(rider.phone, 'riderApproved', [rider.name]).catch(() => {});
+    res.json(rider);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+ridersRouter.patch('/:id/reject', protect, role('admin'), async (req, res) => {
+  try {
+    const reason = req.body.reason || 'Does not meet requirements';
+    const rider = await User.findByIdAndUpdate(
+      req.params.id,
+      { isApproved: false, isSuspended: true, rejectionReason: reason },
+      { new: true }
+    ).select('-password');
+    if (!rider) return res.status(404).json({ message: 'Rider not found' });
+    sendEmail(rider.email, 'riderRejected', { riderName: rider.name, reason }).catch(() => {});
+    res.json(rider);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
@@ -284,7 +338,7 @@ withdrawalsRouter.patch('/:id', protect, role('admin'), async (req, res) => {
           amount: w.amount * 100,
           recipient: recipientCode,
           reason: `DoorBite withdrawal - ${w.requester.name}`,
-reference: `DB-WD-${w._id}`,
+          reference: `DB-WD-${w._id}`,
         });
         w.status = 'processing';
         w.paystackTransferCode = transferRes.data.data.transfer_code;
@@ -401,28 +455,38 @@ adminRouter.get('/overview', protect, role('admin'), async (req, res) => {
   try {
     const today = new Date(); today.setHours(0,0,0,0);
     const weekAgo = new Date(Date.now() - 7*24*60*60*1000);
-    const [customers, riders, restaurants, totalOrders, deliveredOrders,
-       todayDelivered, weekDelivered, allDelivered, pendingW, pendingR,
-       pendingRestaurants, pendingRiders] = await Promise.all([
-  User.countDocuments({ role: 'customer' }),
-  User.countDocuments({ role: 'rider', isApproved: true }),
-  Restaurant.countDocuments({ isVerified: true }),
-  Order.countDocuments({ paymentStatus: 'paid' }),
-  Order.countDocuments({ status: 'delivered' }),
-  Order.find({ status: 'delivered', updatedAt: { $gte: today } }),
-  Order.find({ status: 'delivered', updatedAt: { $gte: weekAgo } }),
-  Order.find({ status: 'delivered' }),
-  Withdrawal.countDocuments({ status: 'pending' }),
-  Order.countDocuments({ refundStatus: 'requested' }),
-  Restaurant.countDocuments({ isVerified: false, isSuspended: false }),
-  User.countDocuments({ role: 'rider', isApproved: false, isSuspended: false }), // ← NEW
-]);
-    const gmv = arr => arr.reduce((s,o) => s+(o.total||0), 0);
+    const [
+      customers, riders, restaurants, totalOrders, deliveredOrders,
+      todayDelivered, weekDelivered, allDelivered,
+      pendingW, pendingR, pendingRestaurants, pendingRiders,
+    ] = await Promise.all([
+      User.countDocuments({ role: 'customer' }),
+      User.countDocuments({ role: 'rider', isApproved: true }),
+      Restaurant.countDocuments({ isVerified: true }),
+      Order.countDocuments({ paymentStatus: 'paid' }),
+      Order.countDocuments({ status: 'delivered' }),
+      Order.find({ status: 'delivered', updatedAt: { $gte: today } }),
+      Order.find({ status: 'delivered', updatedAt: { $gte: weekAgo } }),
+      Order.find({ status: 'delivered' }),
+      Withdrawal.countDocuments({ status: 'pending' }),
+      Order.countDocuments({ refundStatus: 'requested' }),
+      Restaurant.countDocuments({ isVerified: false, isSuspended: false }),
+      User.countDocuments({ role: 'rider', isApproved: false, isSuspended: false }),
+    ]);
+    const gmv = arr => arr.reduce((s, o) => s + (o.total || 0), 0);
     res.json({
-      totalUsers: customers, totalRiders: riders, totalRestaurants: restaurants,
-      totalOrders, deliveredOrders,
-      todayGMV: gmv(todayDelivered), weekGMV: gmv(weekDelivered), totalGMV: gmv(allDelivered),
-      pendingWithdrawals: pendingW, pendingRefunds: pendingR, pendingRestaurants,
+      totalUsers: customers,
+      totalRiders: riders,
+      totalRestaurants: restaurants,
+      totalOrders,
+      deliveredOrders,
+      todayGMV: gmv(todayDelivered),
+      weekGMV: gmv(weekDelivered),
+      totalGMV: gmv(allDelivered),
+      pendingWithdrawals: pendingW,
+      pendingRefunds: pendingR,
+      pendingRestaurants,
+      pendingRiders,              // ← FIXED: now included in response
     });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
@@ -434,14 +498,15 @@ adminRouter.get('/earnings', protect, role('admin'), async (req, res) => {
       Order.find({ status: 'delivered', paymentStatus: 'paid' }),
       Order.find({ status: 'delivered', paymentStatus: 'paid', updatedAt: { $gte: monthAgo } }),
     ]);
-const totalFromRestaurants = allOrders.reduce((s, o) => s + Math.round((o.subtotal || 0) * 0.10), 0);
-const totalFromRiders = allOrders.length * 100;
-const totalFromSmallOrders = allOrders.reduce((s, o) => s + (o.smallOrderFee || 0), 0);
-const totalPlatformEarnings = totalFromRestaurants + totalFromRiders + totalFromSmallOrders;
-const monthFromRestaurants = monthOrders.reduce((s, o) => s + Math.round((o.subtotal || 0) * 0.10), 0);
-const monthFromRiders = monthOrders.length * 100;
-const monthFromSmallOrders = monthOrders.reduce((s, o) => s + (o.smallOrderFee || 0), 0);
-const monthPlatformEarnings = monthFromRestaurants + monthFromRiders + monthFromSmallOrders;    res.json({
+    const totalFromRestaurants = allOrders.reduce((s, o) => s + Math.round((o.subtotal || 0) * 0.10), 0);
+    const totalFromRiders = allOrders.length * 100;
+    const totalFromSmallOrders = allOrders.reduce((s, o) => s + (o.smallOrderFee || 0), 0);
+    const totalPlatformEarnings = totalFromRestaurants + totalFromRiders + totalFromSmallOrders;
+    const monthFromRestaurants = monthOrders.reduce((s, o) => s + Math.round((o.subtotal || 0) * 0.10), 0);
+    const monthFromRiders = monthOrders.length * 100;
+    const monthFromSmallOrders = monthOrders.reduce((s, o) => s + (o.smallOrderFee || 0), 0);
+    const monthPlatformEarnings = monthFromRestaurants + monthFromRiders + monthFromSmallOrders;
+    res.json({
       totalPlatformEarnings, totalFromRestaurants, totalFromRiders,
       monthPlatformEarnings, monthFromRestaurants, monthFromRiders,
       monthOrders: monthOrders.length, totalOrders: allOrders.length,
@@ -449,7 +514,6 @@ const monthPlatformEarnings = monthFromRestaurants + monthFromRiders + monthFrom
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Specific routes BEFORE param routes ─────────────────────────────────────────
 adminRouter.get('/restaurants/pending', protect, role('admin'), async (req, res) => {
   try {
     const restaurants = await Restaurant.find({ isVerified: false, isSuspended: false })
@@ -470,41 +534,26 @@ adminRouter.get('/restaurants', protect, role('admin'), async (req, res) => {
 
 adminRouter.patch('/restaurants/:id/verify', protect, role('admin'), async (req, res) => {
   try {
-    const { sendEmail } = require('../utils/emailService');
-    const { sendSMS } = require('../utils/smsService');
     const { isVerified, isSuspended } = req.body;
     const restaurant = await Restaurant.findByIdAndUpdate(
       req.params.id,
       { isVerified, isSuspended, ...(isVerified ? { isOpen: true } : {}) },
       { new: true }
     ).populate('owner', 'name email phone');
-
-    // Notify owner on approval
     if (isVerified && !isSuspended && restaurant?.owner) {
       const { name: ownerName, email, phone } = restaurant.owner;
       sendEmail(email, 'restaurantApproved', { restaurantName: restaurant.name, ownerName }).catch(() => {});
       if (phone) sendSMS(phone, 'restaurantApproved', [restaurant.name]).catch(() => {});
     }
-
-    // Notify owner on suspension
     if (isSuspended && restaurant?.owner) {
       const { email, phone } = restaurant.owner;
       sendEmail(email, 'restaurantSuspended', { restaurantName: restaurant.name }).catch(() => {});
       if (phone) sendSMS(phone, 'restaurantSuspended', [restaurant.name]).catch(() => {});
     }
-
     res.json(restaurant);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-adminRouter.patch('/restaurants/:id', protect, role('admin'), async (req, res) => {
-  try {
-    const r = await Restaurant.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(r);
-  } catch (err) { res.status(500).json({ message: err.message }); }
-});
-
-// Set commission override for a restaurant
 adminRouter.patch('/restaurants/:id/commission', protect, role('admin'), async (req, res) => {
   try {
     const { percentage, expiresAt, reason, isActive } = req.body;
@@ -523,14 +572,19 @@ adminRouter.patch('/restaurants/:id/commission', protect, role('admin'), async (
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Get all restaurants with active commission overrides
+adminRouter.patch('/restaurants/:id', protect, role('admin'), async (req, res) => {
+  try {
+    const r = await Restaurant.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(r);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 adminRouter.get('/commission-overrides', protect, role('admin'), async (req, res) => {
   try {
     const restaurants = await Restaurant.find({
       'commissionOverride.isActive': true,
       isVerified: true,
     }).populate('owner', 'name email').select('name commissionOverride owner cuisineType');
-    // Filter out expired ones
     const active = restaurants.filter(r => {
       const exp = r.commissionOverride?.expiresAt;
       return !exp || new Date() < new Date(exp);
@@ -570,7 +624,6 @@ categoriesRouter.post('/', protect, role('admin'), async (req, res) => {
 categoriesRouter.patch('/reorder', protect, role('admin'), async (req, res) => {
   try {
     const { Category } = require('../models');
-    // req.body.categories = [{_id, order}, ...]
     await Promise.all(req.body.categories.map(c =>
       Category.findByIdAndUpdate(c._id, { order: c.order })
     ));
@@ -594,68 +647,7 @@ categoriesRouter.delete('/:id', protect, role('admin'), async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// ── ADD THESE ROUTES INSIDE ridersRouter in routes.js ────────────────────────
-// Place after ridersRouter.get('/history', ...) and before module.exports
-
-// GET /api/riders/pending — admin sees all pending riders
-ridersRouter.get('/pending', protect, role('admin'), async (req, res) => {
-  try {
-    const riders = await User.find({ role: 'rider', isApproved: false, isSuspended: false })
-      .select('-password')
-      .sort('-createdAt');
-    res.json(riders);
-  } catch (err) { res.status(500).json({ message: err.message }); }
-});
-
-// GET /api/riders/all — admin sees all riders
-ridersRouter.get('/all', protect, role('admin'), async (req, res) => {
-  try {
-    const riders = await User.find({ role: 'rider' })
-      .select('-password')
-      .sort('-createdAt');
-    res.json(riders);
-  } catch (err) { res.status(500).json({ message: err.message }); }
-});
-
-// PATCH /api/riders/:id/approve — admin approves a rider
-ridersRouter.patch('/:id/approve', protect, role('admin'), async (req, res) => {
-  try {
-    const { sendEmail } = require('../utils/emailService');
-    const { sendSMS } = require('../utils/smsService');
-    const rider = await User.findByIdAndUpdate(
-      req.params.id,
-      { isApproved: true, approvedAt: new Date(), rejectionReason: '' },
-      { new: true }
-    ).select('-password');
-    if (!rider) return res.status(404).json({ message: 'Rider not found' });
-    // Notify rider
-    sendEmail(rider.email, 'riderApproved', { riderName: rider.name }).catch(() => {});
-    if (rider.phone) sendSMS(rider.phone, 'riderApproved', [rider.name]).catch(() => {});
-    res.json(rider);
-  } catch (err) { res.status(500).json({ message: err.message }); }
-});
-
-// PATCH /api/riders/:id/reject — admin rejects a rider
-ridersRouter.patch('/:id/reject', protect, role('admin'), async (req, res) => {
-  try {
-    const { sendEmail } = require('../utils/emailService');
-    const reason = req.body.reason || 'Does not meet requirements';
-    const rider = await User.findByIdAndUpdate(
-      req.params.id,
-      { isApproved: false, isSuspended: true, rejectionReason: reason },
-      { new: true }
-    ).select('-password');
-    if (!rider) return res.status(404).json({ message: 'Rider not found' });
-    sendEmail(rider.email, 'riderRejected', { riderName: rider.name, reason }).catch(() => {});
-    res.json(rider);
-  } catch (err) { res.status(500).json({ message: err.message }); }
-});
-
-usersRouter.post('/push-token', protect, async (req, res) => {
-  try {
-    await User.findByIdAndUpdate(req.user._id, { pushToken: req.body.token });
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ message: err.message }); }
-});
-
-module.exports = { restaurantRouter, menuRouter, usersRouter, ridersRouter, withdrawalsRouter, refundsRouter, adminRouter, promotionsRouter, categoriesRouter };
+module.exports = {
+  restaurantRouter, menuRouter, usersRouter, ridersRouter,
+  withdrawalsRouter, refundsRouter, adminRouter, promotionsRouter, categoriesRouter,
+};
