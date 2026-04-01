@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const { User, Restaurant } = require('../models');
 const { sendEmail } = require('../utils/emailService');
 const { sendSMS } = require('../utils/smsService');
-
+const axios = require('axios');
 const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
 // POST /api/auth/register — customer & rider
@@ -103,6 +103,95 @@ router.post('/register-restaurant', async (req, res) => {
       message: 'Application submitted! We will review and activate your restaurant within 24 hours.',
     });
   } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
+
+
+
+// ── ADD THIS TO backend/src/routes/auth.js ────────────────────────────────────
+// Add after the existing POST /login route, before module.exports
+
+
+
+// POST /api/auth/google — Google Sign-In (create or login)
+router.post('/google', async (req, res) => {
+  try {
+    const { idToken, accessToken } = req.body;
+
+    if (!idToken && !accessToken) {
+      return res.status(400).json({ message: 'Google token required' });
+    }
+
+    // ── Verify token and get user info from Google ────────────────────────────
+    let googleUser;
+    try {
+      if (accessToken) {
+        // Use access token to get user info
+        const response = await axios.get(
+          `https://www.googleapis.com/oauth2/v3/userinfo`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        googleUser = response.data;
+      } else {
+        // Verify ID token
+        const response = await axios.get(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`
+        );
+        googleUser = response.data;
+      }
+    } catch (err) {
+      return res.status(401).json({ message: 'Invalid Google token' });
+    }
+
+    const { email, name, sub: googleId, picture } = googleUser;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Could not get email from Google' });
+    }
+
+    // ── Find existing user or create new one ──────────────────────────────────
+    let user = await User.findOne({ email: email.toLowerCase() });
+
+    if (user) {
+      // User exists — check if suspended
+      if (user.isSuspended) {
+        return res.status(403).json({ message: 'Account suspended. Contact support.' });
+      }
+      // Update googleId if not set
+      if (!user.googleId) {
+        await User.findByIdAndUpdate(user._id, { googleId });
+      }
+    } else {
+      // New user — create account automatically
+      user = await User.create({
+        name:      name || email.split('@')[0],
+        email:     email.toLowerCase(),
+        password:  googleId + process.env.JWT_SECRET, // random password they'll never use
+        role:      'customer',
+        googleId,
+        isApproved: true,
+        avatar:    picture || '',
+      });
+
+      // Send welcome email
+      sendEmail(user.email, 'welcomeCustomer', user.name).catch(() => {});
+    }
+
+    res.json({
+      token: signToken(user._id),
+      user: {
+        _id:   user._id,
+        name:  user.name,
+        email: user.email,
+        role:  user.role,
+        phone: user.phone,
+      },
+    });
+  } catch (err) {
+    console.error('Google auth error:', err.message);
     res.status(500).json({ message: err.message });
   }
 });

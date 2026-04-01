@@ -176,6 +176,7 @@ usersRouter.get('/', protect, role('admin'), async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+
 usersRouter.patch('/:id/suspend', protect, role('admin'), async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(req.params.id, { isSuspended: req.body.isSuspended }, { new: true }).select('-password');

@@ -11,18 +11,20 @@ const userSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   isSuspended: { type: Boolean, default: false },
   // Customer
-  pushToken: { type: String, default: '' },
+  pushToken:     { type: String, default: '' },
+  googleId:      { type: String, default: '' },   // ← Google OAuth ID
+  avatar:        { type: String, default: '' },   // ← Google profile picture
   addresses: [{ label: String, address: String, lat: Number, lng: Number }],
   loyaltyPoints: { type: Number, default: 0 },
   // Rider
   vehicleType: String,
   isOnline: { type: Boolean, default: false },
-  isApproved: { type: Boolean, default: false }, // ← NEW: admin must approve rider
-  ninNumber: { type: String, default: '' },       // ← NEW: NIN or ID number
-  idType: { type: String, default: 'NIN' },       // ← NEW: NIN / Drivers License / Voters Card
-  idDocumentUrl: { type: String, default: '' },   // ← NEW: uploaded ID image URL
-  approvedAt: { type: Date, default: null },       // ← NEW: when admin approved
-  rejectionReason: { type: String, default: '' },  // ← NEW: reason if rejected
+  isApproved: { type: Boolean, default: false },
+  ninNumber: { type: String, default: '' },
+  idType: { type: String, default: 'NIN' },
+  idDocumentUrl: { type: String, default: '' },
+  approvedAt: { type: Date, default: null },
+  rejectionReason: { type: String, default: '' },
   location: { lat: Number, lng: Number },
   rating: { type: Number, default: 5.0 },
   totalTrips: { type: Number, default: 0 },
