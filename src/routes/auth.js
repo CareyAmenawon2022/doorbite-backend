@@ -475,6 +475,108 @@ router.post('/google', async (req, res) => {
   }
 });
 
+// ── ADD THESE 3 ROUTES to backend/src/routes/auth.js ─────────────────────────
+// Paste them right before:  module.exports = router;
+
+// ── POST /api/auth/forgot-password — send OTP to email ───────────────────────
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    // Always return success to prevent email enumeration
+    if (!user || user.role !== 'customer') {
+      return res.json({ message: 'If that email exists, a reset code has been sent.' });
+    }
+
+    const otp        = generateOTP();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await User.findByIdAndUpdate(user._id, {
+      emailOtp:        otp,
+      emailOtpExpires: otpExpires,
+    });
+
+    sendEmail(user.email, 'forgotPassword', { name: user.name, otp }).catch(() => {});
+
+    res.json({
+      success:  true,
+      userId:   user._id,
+      message:  'A password reset code has been sent to your email.',
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ── POST /api/auth/verify-reset-otp — verify OTP before allowing reset ───────
+router.post('/verify-reset-otp', async (req, res) => {
+  try {
+    const { userId, otp } = req.body;
+    if (!userId || !otp) return res.status(400).json({ message: 'userId and otp are required' });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (!user.emailOtp || user.emailOtp !== otp.toString().trim())
+      return res.status(400).json({ message: 'Invalid code. Please check your email and try again.' });
+
+    if (new Date() > user.emailOtpExpires)
+      return res.status(400).json({ message: 'Code expired. Please request a new one.', expired: true });
+
+    // Generate a short-lived reset token (5 minutes)
+    const resetToken = jwt.sign(
+      { id: user._id, purpose: 'reset' },
+      process.env.JWT_SECRET,
+      { expiresIn: '5m' }
+    );
+
+    // Clear OTP
+    await User.findByIdAndUpdate(userId, { emailOtp: '', emailOtpExpires: null });
+
+    res.json({ resetToken, message: 'OTP verified. You can now set a new password.' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ── POST /api/auth/reset-password — set new password using reset token ────────
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { resetToken, newPassword } = req.body;
+    if (!resetToken || !newPassword)
+      return res.status(400).json({ message: 'Reset token and new password are required' });
+
+    if (newPassword.length < 6)
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+
+    let decoded;
+    try {
+      decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ message: 'Reset link expired. Please start over.' });
+    }
+
+    if (decoded.purpose !== 'reset')
+      return res.status(401).json({ message: 'Invalid reset token' });
+
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.password = newPassword; // model's pre-save hook hashes it
+    await user.save();
+
+    res.json({
+      token: signToken(user._id),
+      user:  { _id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone },
+      message: 'Password reset successful!',
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 router.post('/login', async (req, res) => {
   try {

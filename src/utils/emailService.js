@@ -60,6 +60,31 @@ const orderStatusContent = (title, icon, message, order, extraInfo = '') => `
 // ── EMAIL TEMPLATES ────────────────────────────────────────────────────────────
 const templates = {
 
+  // ── ADD THIS to the templates object in emailService.js ──────────────────────
+// Paste it right after the emailOtp template
+
+forgotPassword: ({ name, otp }) => ({
+  subject: `${otp} — Reset your DoorBite password`,
+  html: baseTemplate(`
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="font-size:56px;margin-bottom:12px;">🔐</div>
+      <h1 style="color:#1A1A1A;font-size:24px;font-weight:800;margin:0 0 8px;">Reset your password</h1>
+      <p style="color:#6B7280;font-size:15px;margin:0;">Hi <strong>${name}</strong>, use the code below to reset your DoorBite password.</p>
+    </div>
+    <div style="text-align:center;margin:32px 0;">
+      <div style="display:inline-block;background:#FF6B2C;border-radius:16px;padding:24px 48px;">
+        <div style="color:#fff;font-size:42px;font-weight:900;letter-spacing:12px;">${otp}</div>
+      </div>
+    </div>
+    <div style="background:#FFF7ED;border-radius:14px;padding:16px;border-left:4px solid #FF6B2C;margin-bottom:20px;">
+      <p style="color:#92400E;font-size:13px;font-weight:600;margin:0;">⏱ This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
+    </div>
+    <p style="color:#9CA3AF;font-size:13px;text-align:center;margin:0;">
+      If you didn't request a password reset, you can safely ignore this email. Your password will not change.
+    </p>
+  `),
+}),
+
   emailOtp: ({ name, otp }) => ({
     subject: `${otp} — Your DoorBite verification code`,
     html: baseTemplate(`
@@ -305,6 +330,9 @@ const templates = {
   }),
 
 };
+
+
+
 
 // ── SEND EMAIL via Brevo HTTP API (port 443 — never blocked by Railway) ────────
 const sendEmail = async (to, templateKey, templateData) => {
