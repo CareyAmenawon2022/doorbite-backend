@@ -1,21 +1,13 @@
 const nodemailer = require('nodemailer');
 
-// const transporter = nodemailer.createTransport({
-//   service: 'gmail',
-//   auth: {
-//     user: process.env.GMAIL_USER,
-//     pass: process.env.GMAIL_PASS,
-//   },
-// });
-
+// ── Brevo (Sendinblue) SMTP — works reliably on Railway ───────────────────────
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  family: 4,           // ← force IPv4, fixes ENETUNREACH on Railway
+  host:   'smtp-relay.brevo.com',
+  port:   587,
+  secure: false,
   auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_PASS,
+    user: process.env.BREVO_SMTP_USER,
+    pass: process.env.BREVO_SMTP_PASS,
   },
 });
 
@@ -82,7 +74,6 @@ const orderStatusContent = (title, icon, message, order, extraInfo = '') => `
 // ── EMAIL TEMPLATES ────────────────────────────────────────────────────────────
 const templates = {
 
-  // ── OTP Verification ────────────────────────────────────────────────────────
   emailOtp: ({ name, otp }) => ({
     subject: `${otp} — Your DoorBite verification code`,
     html: baseTemplate(`
@@ -105,7 +96,6 @@ const templates = {
     `),
   }),
 
-  // ── Order Templates ──────────────────────────────────────────────────────────
   orderPlaced: (order) => ({
     subject: `✅ Order Confirmed — #${order.orderCode}`,
     html: baseTemplate(orderStatusContent(
@@ -183,7 +173,6 @@ const templates = {
     `),
   }),
 
-  // ── Welcome Templates ────────────────────────────────────────────────────────
   welcomeCustomer: (name) => ({
     subject: `🎉 Welcome to DoorBite, ${name}!`,
     html: baseTemplate(`
@@ -227,7 +216,6 @@ const templates = {
     `),
   }),
 
-  // ── Restaurant Templates ─────────────────────────────────────────────────────
   restaurantSuspended: ({ restaurantName }) => ({
     subject: `⚠️ ${restaurantName} has been suspended`,
     html: baseTemplate(`
@@ -334,15 +322,15 @@ const templates = {
 
 // ── SEND EMAIL ─────────────────────────────────────────────────────────────────
 const sendEmail = async (to, templateKey, templateData) => {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
-    console.log(`📧 Email skipped (no credentials): ${templateKey} to ${to}`);
+  if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) {
+    console.log(`📧 Email skipped (no Brevo credentials): ${templateKey} to ${to}`);
     return;
   }
   try {
     const template = templates[templateKey]?.(templateData);
     if (!template) { console.warn(`Email template not found: ${templateKey}`); return; }
     await transporter.sendMail({
-      from: `"DoorBite 🍔" <${process.env.GMAIL_USER}>`,
+      from: `"DoorBite" <${process.env.BREVO_SMTP_USER}>`,
       to,
       subject: template.subject,
       html: template.html,
