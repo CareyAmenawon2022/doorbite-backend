@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
   avatar:        { type: String, default: '' },   // ← Google profile picture
   addresses: [{ label: String, address: String, lat: Number, lng: Number }],
   loyaltyPoints: { type: Number, default: 0 },
+  isEmailVerified: { type: Boolean, default: false },
+  emailOtp:        { type: String,  default: '' },
+  emailOtpExpires: { type: Date,    default: null },
+
   // Rider
   vehicleType: String,
   isOnline: { type: Boolean, default: false },
