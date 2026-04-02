@@ -1,15 +1,4 @@
-const nodemailer = require('nodemailer');
-
-// ── Brevo (Sendinblue) SMTP — works reliably on Railway ───────────────────────
-const transporter = nodemailer.createTransport({
-  host:   'smtp-relay.brevo.com',
-  port:   465,
-  secure: true,
-  auth: {
-    user: process.env.BREVO_SMTP_USER,
-    pass: process.env.BREVO_SMTP_PASS,
-  },
-});
+const axios = require('axios'); // already installed — used in auth.js
 
 const BRAND = {
   name: 'DoorBite',
@@ -29,7 +18,6 @@ const baseTemplate = (content) => `
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F4F6FA;padding:40px 0;">
     <tr><td align="center">
       <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-        <!-- Header -->
         <tr>
           <td style="background:${BRAND.color};padding:32px;text-align:center;">
             <div style="font-size:48px;margin-bottom:8px;">${BRAND.logo}</div>
@@ -37,9 +25,7 @@ const baseTemplate = (content) => `
             <div style="color:rgba(255,255,255,0.8);font-size:14px;margin-top:4px;">Fast food, faster delivery</div>
           </td>
         </tr>
-        <!-- Content -->
         <tr><td style="padding:36px 40px;">${content}</td></tr>
-        <!-- Footer -->
         <tr>
           <td style="background:#F8F9FA;padding:24px 40px;text-align:center;border-top:1px solid #E8ECF0;">
             <p style="color:#9CA3AF;font-size:13px;margin:0;">© ${new Date().getFullYear()} ${BRAND.name}. All rights reserved.</p>
@@ -320,24 +306,34 @@ const templates = {
 
 };
 
-// ── SEND EMAIL ─────────────────────────────────────────────────────────────────
+// ── SEND EMAIL via Brevo HTTP API (port 443 — never blocked by Railway) ────────
 const sendEmail = async (to, templateKey, templateData) => {
-  if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) {
-    console.log(`📧 Email skipped (no Brevo credentials): ${templateKey} to ${to}`);
+  if (!process.env.BREVO_API_KEY) {
+    console.log(`📧 Email skipped (no BREVO_API_KEY): ${templateKey} to ${to}`);
     return;
   }
   try {
     const template = templates[templateKey]?.(templateData);
     if (!template) { console.warn(`Email template not found: ${templateKey}`); return; }
-    await transporter.sendMail({
-      from: `"DoorBite" <${process.env.BREVO_SMTP_USER}>`,
-      to,
-      subject: template.subject,
-      html: template.html,
-    });
+
+    await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        sender:      { name: 'DoorBite', email: process.env.BREVO_SENDER_EMAIL || process.env.BREVO_SMTP_USER },
+        to:          [{ email: to }],
+        subject:     template.subject,
+        htmlContent: template.html,
+      },
+      {
+        headers: {
+          'api-key':     process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
     console.log(`📧 Email sent: ${templateKey} → ${to}`);
   } catch (err) {
-    console.error(`📧 Email failed: ${templateKey} → ${to}:`, err.message);
+    console.error(`📧 Email failed: ${templateKey} → ${to}:`, err.response?.data?.message || err.message);
   }
 };
 
