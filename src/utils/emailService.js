@@ -69,15 +69,37 @@ const orderStatusContent = (title, icon, message, order, extraInfo = '') => `
 `;
 
 // ── EMAIL TEMPLATES ────────────────────────────────────────────────────────────
-
 const templates = {
 
+  // ── OTP Verification ────────────────────────────────────────────────────────
+  emailOtp: ({ name, otp }) => ({
+    subject: `${otp} — Your DoorBite verification code`,
+    html: baseTemplate(`
+      <div style="text-align:center;margin-bottom:28px;">
+        <div style="font-size:56px;margin-bottom:12px;">📧</div>
+        <h1 style="color:#1A1A1A;font-size:24px;font-weight:800;margin:0 0 8px;">Verify your email</h1>
+        <p style="color:#6B7280;font-size:15px;margin:0;">Hi <strong>${name}</strong>, use the code below to verify your DoorBite account.</p>
+      </div>
+      <div style="text-align:center;margin:32px 0;">
+        <div style="display:inline-block;background:#FF6B2C;border-radius:16px;padding:24px 48px;">
+          <div style="color:#fff;font-size:42px;font-weight:900;letter-spacing:12px;">${otp}</div>
+        </div>
+      </div>
+      <div style="background:#FFF7ED;border-radius:14px;padding:16px;border-left:4px solid #FF6B2C;margin-bottom:20px;">
+        <p style="color:#92400E;font-size:13px;font-weight:600;margin:0;">⏱ This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
+      </div>
+      <p style="color:#9CA3AF;font-size:13px;text-align:center;margin:0;">
+        If you didn't create a DoorBite account, you can safely ignore this email.
+      </p>
+    `),
+  }),
+
+  // ── Order Templates ──────────────────────────────────────────────────────────
   orderPlaced: (order) => ({
     subject: `✅ Order Confirmed — #${order.orderCode}`,
     html: baseTemplate(orderStatusContent(
-      'Order Placed!',
-      '📋',
-      'We\'ve received your order and sent it to the restaurant.',
+      'Order Placed!', '📋',
+      "We've received your order and sent it to the restaurant.",
       order,
       `<div style="background:#FFF7ED;border-radius:12px;padding:16px;border-left:4px solid #FF6B2C;">
         <p style="color:#92400E;font-size:14px;font-weight:600;margin:0;">⏱ Estimated delivery time: 25–35 minutes</p>
@@ -88,8 +110,7 @@ const templates = {
   orderConfirmed: (order) => ({
     subject: `👨‍🍳 Restaurant confirmed your order — #${order.orderCode}`,
     html: baseTemplate(orderStatusContent(
-      'Order Confirmed!',
-      '✅',
+      'Order Confirmed!', '✅',
       `${order.restaurantName} has confirmed your order and is preparing your food.`,
       order,
       `<div style="background:#F0FDF4;border-radius:12px;padding:16px;border-left:4px solid #22C55E;">
@@ -101,8 +122,7 @@ const templates = {
   orderPickedUp: (order) => ({
     subject: `🛵 Your order is on the way! — #${order.orderCode}`,
     html: baseTemplate(orderStatusContent(
-      'Order Picked Up!',
-      '🛵',
+      'Order Picked Up!', '🛵',
       'Your rider has picked up your order and is heading to you.',
       order,
       order.riderName ? `
@@ -116,8 +136,7 @@ const templates = {
   orderDelivered: (order) => ({
     subject: `🎉 Order delivered! Rate your experience — #${order.orderCode}`,
     html: baseTemplate(orderStatusContent(
-      'Order Delivered!',
-      '🎉',
+      'Order Delivered!', '🎉',
       'Your order has arrived. We hope you enjoy your meal!',
       order,
       `<div style="text-align:center;margin-top:20px;">
@@ -130,8 +149,7 @@ const templates = {
   orderCancelled: (order) => ({
     subject: `❌ Order cancelled — #${order.orderCode}`,
     html: baseTemplate(orderStatusContent(
-      'Order Cancelled',
-      '❌',
+      'Order Cancelled', '❌',
       'Your order has been cancelled. If you were charged, a refund will be processed within 24 hours.',
       order,
       `<div style="background:#FEF2F2;border-radius:12px;padding:16px;border-left:4px solid #EF4444;">
@@ -154,6 +172,7 @@ const templates = {
     `),
   }),
 
+  // ── Welcome Templates ────────────────────────────────────────────────────────
   welcomeCustomer: (name) => ({
     subject: `🎉 Welcome to DoorBite, ${name}!`,
     html: baseTemplate(`
@@ -197,6 +216,7 @@ const templates = {
     `),
   }),
 
+  // ── Restaurant Templates ─────────────────────────────────────────────────────
   restaurantSuspended: ({ restaurantName }) => ({
     subject: `⚠️ ${restaurantName} has been suspended`,
     html: baseTemplate(`
@@ -210,7 +230,7 @@ const templates = {
       </div>
     `),
   }),
-  
+
   restaurantApplicationReceived: ({ ownerName, restaurantName }) => ({
     subject: `📋 Application received — ${restaurantName}`,
     html: baseTemplate(`
@@ -230,6 +250,26 @@ const templates = {
       </div>
       <div style="background:#F0FDF4;border-radius:12px;padding:16px;text-align:center;">
         <p style="color:#166534;font-size:13px;font-weight:600;margin:0;">Questions? Email us at support@doorbite.ng</p>
+      </div>
+    `),
+  }),
+
+  restaurantApproved: ({ restaurantName, ownerName }) => ({
+    subject: `✅ ${restaurantName} is now live on DoorBite!`,
+    html: baseTemplate(`
+      <div style="text-align:center;margin-bottom:28px;">
+        <div style="font-size:56px;margin-bottom:12px;">🎊</div>
+        <h1 style="color:#1A1A1A;font-size:24px;font-weight:800;margin:0 0 8px;">You're live, ${ownerName}!</h1>
+        <p style="color:#6B7280;font-size:15px;margin:0;"><strong>${restaurantName}</strong> has been approved and is now visible to customers on DoorBite.</p>
+      </div>
+      <div style="background:#F0FDF4;border-radius:14px;padding:20px;margin-bottom:20px;border-left:4px solid #22C55E;">
+        <p style="color:#166534;font-size:14px;font-weight:700;margin:0 0 8px;">✅ What happens next:</p>
+        <ul style="color:#166534;font-size:14px;margin:0;padding-left:20px;line-height:1.8;">
+          <li>Log in to your restaurant dashboard</li>
+          <li>Add your menu items with photos</li>
+          <li>Set your opening hours</li>
+          <li>Toggle "Open" to start receiving orders</li>
+        </ul>
       </div>
     `),
   }),
@@ -258,7 +298,6 @@ const templates = {
     `),
   }),
 
-
   riderDeliveryComplete: ({ orderCode, riderEarning, restaurantName }) => ({
     subject: `💰 ₦${riderEarning?.toLocaleString()} earned — Order #${orderCode}`,
     html: baseTemplate(`
@@ -280,30 +319,7 @@ const templates = {
     `),
   }),
 
-  
-  restaurantApproved: ({ restaurantName, ownerName }) => ({
-    subject: `✅ ${restaurantName} is now live on DoorBite!`,
-    html: baseTemplate(`
-      <div style="text-align:center;margin-bottom:28px;">
-        <div style="font-size:56px;margin-bottom:12px;">🎊</div>
-        <h1 style="color:#1A1A1A;font-size:24px;font-weight:800;margin:0 0 8px;">You're live, ${ownerName}!</h1>
-        <p style="color:#6B7280;font-size:15px;margin:0;"><strong>${restaurantName}</strong> has been approved and is now visible to customers on DoorBite.</p>
-      </div>
-      <div style="background:#F0FDF4;border-radius:14px;padding:20px;margin-bottom:20px;border-left:4px solid #22C55E;">
-        <p style="color:#166534;font-size:14px;font-weight:700;margin:0 0 8px;">✅ What happens next:</p>
-        <ul style="color:#166534;font-size:14px;margin:0;padding-left:20px;line-height:1.8;">
-          <li>Log in to your restaurant dashboard</li>
-          <li>Add your menu items with photos</li>
-          <li>Set your opening hours</li>
-          <li>Toggle "Open" to start receiving orders</li>
-        </ul>
-      </div>
-    `),
-  }),
-
 };
-
-
 
 // ── SEND EMAIL ─────────────────────────────────────────────────────────────────
 const sendEmail = async (to, templateKey, templateData) => {

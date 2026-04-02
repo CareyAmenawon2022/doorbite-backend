@@ -19,6 +19,7 @@ const userSchema = new mongoose.Schema({
   isEmailVerified: { type: Boolean, default: false },
   emailOtp:        { type: String,  default: '' },
   emailOtpExpires: { type: Date,    default: null },
+  
 
   // Rider
   vehicleType: String,
